@@ -1,5 +1,6 @@
 import torch
 import torch.nn.functional as F
+import random
 
 def compute_token_entropies(scores):
     entropies = []
@@ -59,3 +60,31 @@ def compute_delta_entropy(entropies, spike_threshold=None):
         return 0, max_delta, [], deltas
     spike_positions = [i + 1 for i, d in enumerate(deltas) if d > spike_threshold]
     return len(spike_positions), max_delta, spike_positions, deltas
+
+
+
+def compute_sampling_disagreement(model, tokenizer, prompt, n_samples=5, temperature=0.7, seed=42):
+    random.seed(seed)
+    torch.manual_seed(seed)
+
+    answers = []
+    for _ in range(n_samples):
+        inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
+        with torch.no_grad():
+            output = model.generate(
+                **inputs,
+                max_new_tokens=200,
+                do_sample=True,
+                temperature=temperature,
+                pad_token_id=tokenizer.eos_token_id
+            )
+        full_text = tokenizer.decode(output[0], skip_special_tokens=True)
+        if full_text.startswith(prompt):
+            answer = full_text[len(prompt):].strip()
+        else:
+            answer = full_text.strip()
+        answers.append(answer)
+
+    unique_count = len(set(answers))
+    disagreement = (unique_count - 1) / (n_samples - 1)
+    return disagreement, answers
